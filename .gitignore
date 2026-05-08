@@ -1,0 +1,23 @@
+# Runtime state — never commit
+comm/
+
+# Worker scratch dirs (your B/C cwds live here when testing locally)
+tmp/
+
+# e2e test scratch dirs
+tests/.scratch/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store

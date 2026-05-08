@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run --quiet peer-cc init >/dev/null 2>&1; uv run --quiet peer-cc register --role coordinator --id A >/dev/null 2>&1; case $? in 0) echo 'peer-cc: registered as coordinator A';; 3) echo 'peer-cc: COORDINATOR COLLISION — another A is already alive in this session. This CC will NOT take over. Either close the other A, or wipe the session with: uv run peer-cc reset --yes';; *) echo 'peer-cc: register failed (unknown error)';; esac"
+          }
+        ]
+      }
+    ]
+  }
+}

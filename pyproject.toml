@@ -1,0 +1,18 @@
+[project]
+name = "peer-cc"
+version = "0.1.0"
+description = "File-based multi-agent coop bus for Claude Code"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.12",
+]
+
+[project.scripts]
+peer-cc = "peer_cc.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/peer_cc"]
