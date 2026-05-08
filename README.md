@@ -203,6 +203,10 @@ reads cwd). You can also pass `--coop <path>` explicitly. **Never use
 `export PEER_CC_COOP=…`** — Claude Code's Bash tool starts a fresh shell
 per call, so env vars don't persist across tool invocations.
 
+```
+peer-cc --version, -V         # print version and exit
+```
+
 ### Lifecycle
 
 ```

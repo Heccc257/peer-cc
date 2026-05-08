@@ -55,7 +55,6 @@ wheels = [
 
 [[package]]
 name = "peer-cc"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "typer" },

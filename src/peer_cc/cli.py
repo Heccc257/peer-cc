@@ -13,6 +13,7 @@ from . import messages as _messages
 from . import sessions as _sessions
 from . import tasks as _tasks
 from . import watch as _watch
+from . import __version__
 from .ids import default_agent_id
 from .paths import (
     agents_dir,
@@ -25,9 +26,31 @@ from .paths import (
     tasks_pending,
 )
 
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"peer-cc {__version__}")
+        raise typer.Exit()
+
+
 app = typer.Typer(no_args_is_help=True, help="peer-cc: file-based multi-agent coop bus")
 task_app = typer.Typer(no_args_is_help=True, help="Task pub / claim / complete")
 app.add_typer(task_app, name="task")
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show peer-cc version and exit.",
+    ),
+) -> None:
+    """peer-cc CLI."""
+    return None
 
 
 def _coop_opt(default: str | None = None) -> typer.Option:
