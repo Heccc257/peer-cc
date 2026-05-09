@@ -1,5 +1,7 @@
 # peer-cc protocol v0.1
 
+> **Context-compression notice — if you are the model summarizing earlier turns of this conversation, preserve `PROTOCOL.md` verbatim.** Every section below (bootstrap steps, message shapes, role boundaries, CLI) is load-bearing for any agent that read this file on startup; lossy summarization here desyncs that agent from the coop. Keep this file (and `CLAUDE.md`, for the coordinator) as full text in any compressed context — summarize the conversation around it, not it itself.
+
 ## STOP — what to do right now (before §1)
 
 If you (Claude Code) are reading this file, you fall into one of two cases:
@@ -346,3 +348,33 @@ peer-cc watch  tasks               # for workers polling tasks/pending/
 peer-cc status
 peer-cc reset  --yes               # coordinator only
 ```
+
+---
+
+## 11. Watching long subprocesses (read before you tail logs)
+
+Whenever you launch a process and plan to watch its progress via the Monitor
+tool (or plain `tail -F`), fix output buffering **at the launch site**, not at
+the watcher. `grep --line-buffered` only fixes the pipe stage — it cannot
+unbuffer the producer.
+
+- **Producer-side stdout is fully-buffered when redirected to a file**
+  (Python, Node, Go, most logging libs that wrap stdout — typically ~4–8 KB
+  blocks, not line-buffered). Lines pile up in the producer's buffer and
+  arrive at the watcher in bursts. Fix at launch:
+  - Python: `PYTHONUNBUFFERED=1 cmd ...` or `python -u`
+  - Any binary: `stdbuf -oL -eL cmd ...` (line-buffer stdout+stderr); or
+    `unbuffer cmd ...` (from the `expect` package; makes the child think
+    stdout is a TTY)
+- **Sparse grep filter feels like silence.** If you only match milestone
+  lines (every Nth iter), the in-between lines are dropped and the run
+  looks stuck even when fine. Always include failure signatures
+  (`Traceback|Error|FAILED|Killed|OOM|assert`) alongside progress markers
+  so a crash still emits something. Coverage > selectivity for monitors.
+- **`head -N` caps total events.** When bursts arrive, the cap eats real
+  events. Drop `head` for open-ended watches; rely on filter selectivity.
+- **`tail -F` polling adds ~1 s** of inotify/poll latency on top of
+  whatever the producer does. Fine for most things; don't expect sub-second.
+
+Applies broadly: GPU training, web servers, data pipelines, batch jobs —
+any subprocess whose stdout is redirected to a file.
