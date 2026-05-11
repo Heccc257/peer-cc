@@ -46,6 +46,19 @@ you don't know which subgroup is in scope, ask the human once ("just B+C, or
 also D+E?") and remember it for the rest of the session. The coordinator is
 shared across subgroups but typically dispatches per-subgroup, not coop-wide.
 
+**Priority: human always wins over peer signals.** While you're handling a
+human turn and a peer-cc Monitor event fires (new inbox message, new task
+notification), **finish the human's request first**. Do not abandon a human
+mid-thought to inspect a peer message. The message file is durable on disk —
+it will still be there on your next turn — and the peer expects asynchronous
+delivery, not instant pickup. After the human turn closes, drain the inbox.
+If a peer is genuinely blocked on you and the human turn is short, finish the
+human cleanly, then process the inbox in the same response. If the human turn
+is long, surface a one-line tail at the end ("N messages queued from B/C —
+want me to handle them now?") and let the human decide. Peer notifications
+**never** preempt human-facing work; that's how a single agent stays coherent
+to the person it's actually talking to.
+
 ## 2. Reporting discipline (workers, this is the big one)
 
 Workers often run **long, multi-step, partially-autonomous** workflows: launch

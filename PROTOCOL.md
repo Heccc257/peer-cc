@@ -94,6 +94,14 @@ and in-conversation context compression. Four rules in summary:
    recipient's context, and once a message is consumed the body is in
    `processed/` and inconvenient to re-read, while a file on disk stays put.
    See `skills/peer-cc-skill/SKILL.md` §2.
+7. **Human always wins.** When a peer-cc Monitor event fires (new inbox
+   message, new task) while you're handling a human turn, **finish the human
+   request first** — never abandon a human mid-thought to chase a peer signal.
+   The inbox file is durable; the peer can wait one turn. After the human
+   turn closes, process queued messages; or, if the turn is long, mention at
+   the end that "N messages queued from B/C" and let the human decide whether
+   to address them now or keep going. Peer notifications never preempt
+   human-facing work.
 
 ---
 
