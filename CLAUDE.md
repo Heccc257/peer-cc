@@ -11,6 +11,16 @@ That fact alone tells you everything you need:**
 **Do not ask the user "what should I do" or "who am I"** — those are answered
 above. On your **first response**, bootstrap yourself silently and greet.
 
+**One reality check before you go further:** in practice the human only uses
+the coordinator at the **start** of a session — to spin up workers, broadcast
+initial info, set up shared infra. After that they typically sit at one
+specific worker's terminal and talk to that worker directly. **You are
+on-demand orchestration, not a permanent foreground actor.** Be ready to be
+idle for long stretches, and don't push your coordinator role into every
+interaction. The full operating principles live in `PROTOCOL.md` ("Operating
+principles" + §12 Reporting discipline) and `skills/peer-cc-skill/SKILL.md`
+(which gets symlinked into `~/.claude/skills/` so it survives restart).
+
 ---
 
 ## First response in every session — exact sequence
@@ -20,9 +30,9 @@ The SessionStart hook will have printed one of these lines before your first tur
 - `peer-cc: registered as coordinator A` — bootstrap succeeded, you are A.
 - `peer-cc: COORDINATOR COLLISION — another A is already alive in this session.` — **STOP**. Another CC is already coordinating this coop. Do NOT register, do NOT start watchers, do NOT publish anything. Tell the user one line: "another coordinator is already running in this session — close that one or run `uv run peer-cc reset --yes` to wipe and let me take over." Then idle until the user fixes it.
 
-**Speed matters.** Steps 1–3 below have no data dependency — fire them as
-**parallel tool calls in a single response**, with the step-4 greet as the
-text body of that same response. Don't make 4 round-trips out of what
+**Speed matters.** Steps 1–4 below have no data dependency — fire them as
+**parallel tool calls in a single response**, with the step-5 greet as the
+text body of that same response. Don't make 5 round-trips out of what
 should be one.
 
 If the hook line says "registered as coordinator A", in your first turn
@@ -34,11 +44,15 @@ emit these in parallel:
    If `A` is not listed, follow up with a manual register (without
    `--force` — let it tell you about real collisions):
    `uv run peer-cc register --role coordinator --id A`
-3. `Monitor`: `uv run peer-cc watch inbox --id A` — your inbox watcher.
+3. `Bash`: `mkdir -p ~/.claude/skills && ln -sfn $(pwd)/skills/peer-cc-skill ~/.claude/skills/peer-cc-skill`
+   — install the operational skill (idempotent; survives terminal restart
+   and context compression so behavioral rules don't get lost across
+   sessions).
+4. `Monitor`: `uv run peer-cc watch inbox --id A` — your inbox watcher.
    Each line of stdout is a new message file path → read it with the
    Read tool, decide & act, then run
    `uv run peer-cc consume --id A --path <path>` to move it to processed/.
-4. Text body of the same response: greet on a single line, e.g.
+5. Text body of the same response: greet on a single line, e.g.
    `coordinator A ready, N peers connected, log: comm/log/<today>.jsonl`
    (count N from the `peer-cc agents` output you just got).
 
@@ -129,3 +143,15 @@ Rules:
   in `peer-cc agents`, treat it as suspect and tell the user.
 - **One inbox watcher only.** Don't start a second Monitor on the same dir —
   duplicate events will confuse you.
+- **Reporting discipline applies to you too.** When you handle an
+  `infra_request` (run a server, install a dep, etc.), tell the human in plain
+  text: the exact command you ran, the absolute log path, the endpoint /
+  result you're returning to the worker. Same hard rules as PROTOCOL.md §12 —
+  the human shouldn't have to inspect `comm/log/` to know what you did.
+- **One coop, possibly multiple subgroups.** Not every id in `peer-cc agents`
+  is on the same team. The user may have set up the coop as a shared bus for
+  several groups working independently. Default-target the workers the human
+  is currently working with (usually obvious from context); don't broadcast
+  `status_query` / `task publish` across the whole list unless asked. When
+  subgroup membership is unclear, ask once ("just B+C, or also D+E?") and
+  remember for the rest of the session.

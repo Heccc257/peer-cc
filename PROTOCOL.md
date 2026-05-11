@@ -29,9 +29,12 @@ that same turn. Total: one round-trip, not four.
 2. Pick an **agent id**. Honor whatever the user said in the prompt
    (e.g. "我是 worker B" → id=B). If they didn't specify, default to
    `<hostname>-<cwd_basename>`.
-3. **In ONE response, fire all three of these in parallel** (and put the
+3. **In ONE response, fire all four of these in parallel** (and put the
    step-5 greet as the text body of the same response):
    - `Bash`: `uv run --directory <coop> peer-cc register --role worker --id <id>`
+   - `Bash`: `mkdir -p ~/.claude/skills && ln -sfn <coop>/skills/peer-cc-skill ~/.claude/skills/peer-cc-skill`
+     — installs the operational skill (idempotent; survives terminal restart
+     and context compression so behavioral rules don't get lost).
    - `Monitor` (inbox): `uv run --directory <coop> peer-cc watch inbox --id <id>`
    - `Monitor` (tasks): `uv run --directory <coop> peer-cc watch tasks --id <id>`
 
@@ -47,8 +50,41 @@ poll), and their first heartbeat (which writes agents/<id>.json) doesn't
 fire until 15 s in — long after `register` has finished writing its record.
 There is no race.
 
-After step 5 you're bootstrapped. §1–§10 below are reference — internalize
+After step 5 you're bootstrapped. §1–§12 below are reference — internalize
 on first read, but do **not** re-execute the bootstrap.
+
+---
+
+## Operating principles (apply throughout your time in this coop)
+
+The full discussion lives in `skills/peer-cc-skill/SKILL.md`, symlinked into
+`~/.claude/skills/peer-cc-skill/` on bootstrap so it survives terminal restart
+and in-conversation context compression. Four rules in summary:
+
+1. **The human is not always with the coordinator.** Initial spin-up goes
+   through coordinator A; afterwards the human usually sits at one specific
+   worker's terminal and talks to that worker directly. Workers act on direct
+   human instructions without escalating every decision; coordinator is idle
+   except for infra requests and cross-worker coordination. Don't push the
+   "coordinator orchestrates everything" framing into routine turns.
+2. **Report unprompted, especially around backgrounded work.** After launching
+   a long task, handing off to another worker, or finishing a multi-step run,
+   tell the human in plain text: exact command, absolute log paths, what
+   you're waiting for, what failure signatures matter. Hard rules in §12.
+3. **Inbox hygiene.** Always `peer-cc consume --id <you> --path <p>` after
+   acting on a message — else it lingers and confuses humans and `peer-cc
+   status`.
+4. **Skill-first re-orientation after restart.** If your terminal or context
+   was reset, the peer-cc-skill auto-loads from `~/.claude/skills/`. Re-read
+   `<coop>/PROTOCOL.md` cold and check `comm/inbox/<you>/` for missed messages
+   before you act on whatever the human just said.
+5. **One coop ≠ one team.** Multiple subgroups commonly share a coop for
+   convenience (team Alpha = B+C, team Beta = D+E, all in the same `comm/`).
+   Default-target the agents the human is actually working with — don't
+   broadcast `status_query` / `task publish` across every id in `peer-cc
+   agents` unless explicitly asked. The coordinator is shared but typically
+   dispatches per-subgroup. If subgroup membership is ambiguous, ask the human
+   once and remember.
 
 ---
 
@@ -144,11 +180,18 @@ read this spec and follow it):
 1. Read `<coop-path>/PROTOCOL.md` (this file).
 2. Pick an agent id — default `<hostname>-<cwd_basename>` if the user didn't
    name one in the prompt; otherwise honor what they said (e.g. "我是 worker B" → id=B).
-3. Register yourself. **No `--coop` or env var needed** — `uv run --directory <coop>`
-   chdir()s into the coop root, and peer-cc auto-detects coop from cwd:
+3. Register yourself **and install the operational skill** (idempotent — safe
+   to re-run on every bootstrap). **No `--coop` or env var needed** —
+   `uv run --directory <coop>` chdir()s into the coop root, and peer-cc
+   auto-detects coop from cwd:
    ```bash
    uv run --directory <coop-path> peer-cc register --role worker --id <id>
+   mkdir -p ~/.claude/skills && ln -sfn <coop-path>/skills/peer-cc-skill ~/.claude/skills/peer-cc-skill
    ```
+   The skill at `~/.claude/skills/peer-cc-skill/` carries the behavioral rules
+   (reporting discipline, restart re-orientation, etc.) so they survive
+   terminal restart and context compression on this machine. See
+   `<coop>/skills/peer-cc-skill/SKILL.md` for the full text.
    (Do NOT use `export PEER_CC_COOP=...`. CC's Bash tool starts a fresh shell
    per call, so env vars don't persist across tool invocations. Always invoke
    peer-cc through `uv run --directory <coop-path>` instead.)
@@ -378,3 +421,37 @@ unbuffer the producer.
 
 Applies broadly: GPU training, web servers, data pipelines, batch jobs —
 any subprocess whose stdout is redirected to a file.
+
+---
+
+## 12. Reporting discipline (workers especially)
+
+Workers often run **long, multi-step, partially-autonomous** workflows: launch
+a background job, wait for it, hand off to another worker, come back. The
+human may be away for minutes or hours. Without proactive reporting, "thinking",
+"blocked on a peer", "running fine in the background", and "crashed silently
+8 minutes ago" all look identical from the outside. Treat reporting as a hard
+deliverable, not a courtesy. Full discussion + examples live in
+`skills/peer-cc-skill/SKILL.md` §2; the must-do rules are below.
+
+- **When you launch background work**, in the same turn tell the human:
+  the **exact command** (one fenced line, copy-pasteable); the **absolute log
+  path** for stdout+stderr; the **`tail -F <path>`** invocation to follow it
+  (or the Monitor you started on their behalf); the **condition you're waiting
+  for** to call it done; the **failure signatures** you'll watch for. §11
+  buffering rules apply — a silent log usually means producer-side buffering,
+  not a hang.
+- **When you message another worker**, in the same turn tell the human: who
+  you sent to; the message `type` and one-sentence intent of the body; what
+  reply you expect and roughly when; whether you're blocking on it or moving
+  on with parallel work.
+- **When a long task completes (or fails)**, report **unprompted**: one-line
+  summary (succeeded / failed / partial); pointer to the artifact (path,
+  message id, task id); the next step you're taking or asking about.
+- **Never go silent inside a multi-step task.** If a step takes more than ~30 s
+  of clock time, drop a one-line update between steps ("step 2/4 done,
+  starting 3"). Silence reads as "stuck or crashed" to a human who can't see
+  your inner reasoning.
+
+This applies to coordinators too when they handle `infra_request` or run any
+shared setup — same rules, same reasoning.
