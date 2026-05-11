@@ -96,6 +96,54 @@ If a step takes more than ~30 seconds of clock time, drop a one-line status
 between steps: `step 2/4 done, starting 3 (downloading X)`. Silence reads as
 "stuck or crashed" to a human who can't see your inner monologue.
 
+### The on-disk complement: maintain a work archive
+
+Chat reporting tells the human in the moment, but chat history gets compressed
+away and conversations end. The filesystem doesn't. For any non-trivial work
+— a backgrounded job, a multi-step run, anything worth replaying or auditing
+— the same information you put in chat must also be **reconstructible from
+disk alone**. A returning human (or future-you after a context reset, or
+another agent picking up the work) should be able to walk into your worker
+cwd and figure out what happened without conversational context.
+
+The convention is one self-contained directory per work unit:
+
+```
+<worker-cwd>/work/<YYYYMMDD-HHMM>-<slug>/
+  cmd.sh         # the exact launch command(s), executable, copy-pasteable
+  stdout.log     # captured stdout — line-buffered, see PROTOCOL.md §11
+  stderr.log     # captured stderr (or merged into stdout.log if small)
+  README.md      # 1 short paragraph: what this run is, why, what "done"
+                 # looks like, what failure looks like
+  result.md      # appended on completion: outcome (ok/fail/partial),
+                 # pointer to artifacts, what the next step is
+  artifacts/     # optional: checkpoints, csv outputs, dumps
+```
+
+Hard rules:
+
+- **Script before invocation.** When you'd type `bash -c '...'` or
+  `nohup ... &`, write the pipeline to `cmd.sh`, `chmod +x` it, and run that.
+  Reusable, re-readable, future-you can `cat` it.
+- **Absolute log paths in chat.** When you tell the human "log is at X", X
+  must be the absolute path inside this directory — not a relative path that
+  breaks if the human is `cd`'d elsewhere or reading on another machine.
+- **Drop `README.md` *before* you launch**, not after. It's the breadcrumb
+  that lets cold readers orient. One paragraph is enough.
+- **Append `result.md` on completion**, even on failure. A few lines: outcome,
+  artifact pointer, what's next. This is the file the next agent / next-day
+  human will actually read.
+- **Don't put archives under `comm/`.** `comm/` is peer-cc's protocol state
+  (gitignored, owned by the bus). Work archives are *your* content, not coop
+  state — keep them in the worker's own cwd or a sibling dir.
+- **Skip the archive for trivial one-liners.** This is for work worth audit /
+  replay / handoff. A `ls -la` doesn't need a directory.
+
+If your worker is executing a `task` claimed from the queue, include the task
+id in the slug (`<YYYYMMDD-HHMM>-<task-id>-<short>`) so the archive is
+matchable to the task record. When you `task complete`, point its `--result`
+at this directory's path.
+
 ## 3. Surviving restart and context compression
 
 This skill is symlinked into `~/.claude/skills/peer-cc-skill/` on bootstrap
