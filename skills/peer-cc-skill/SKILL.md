@@ -109,6 +109,34 @@ If a step takes more than ~30 seconds of clock time, drop a one-line status
 between steps: `step 2/4 done, starting 3 (downloading X)`. Silence reads as
 "stuck or crashed" to a human who can't see your inner monologue.
 
+### When the human asks you a question
+
+The human typically does **not** share your full context — especially after a
+long multi-turn task, after they've been away, or after their conversation
+context was compressed. They're asking you precisely because you hold state
+they don't. Treat the answer as **needing evidence**, not just assertion.
+
+- **Cite the source** — log line, file path + line number, message id, task
+  id — that backs each non-trivial claim. "Training converged" →
+  "Training converged: see `/abs/path/work/20260510-1430-smoke/stdout.log`
+  around line 8421, final loss 0.31."
+- **Pair quotes with paths.** A few lines lifted from the source can clarify,
+  but always include the path so the human can scroll up and read more
+  context. Never quote in isolation.
+- **Show the input data behind decisions.** When you took an action on the
+  human's behalf, point at the failing test, the error message, the config
+  diff — not just the conclusion. The human shouldn't have to ask "why?".
+- **Reference the work archive, not the chat.** Chat history compresses; the
+  `<cwd>/work/<ts>-<slug>/` directory you wrote earlier doesn't. Lead the
+  human to the durable record.
+- **Flag memory-only claims explicitly.** If you're answering from
+  recollection without a logged source — e.g. "I think B finished its crawl
+  an hour ago" — say so. Lets the human decide whether to verify.
+
+The asymmetry is sharpest after long autonomous runs. The human cannot reread
+your inner reasoning; the durable record (logs, files, message archives) is
+their only verification path. Make it easy to follow.
+
 ### The on-disk complement: maintain a work archive
 
 Chat reporting tells the human in the moment, but chat history gets compressed

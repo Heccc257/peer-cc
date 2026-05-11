@@ -469,6 +469,13 @@ deliverable, not a courtesy. Full discussion + examples live in
   of clock time, drop a one-line update between steps ("step 2/4 done,
   starting 3"). Silence reads as "stuck or crashed" to a human who can't see
   your inner reasoning.
+- **When the human asks a question, cite evidence.** They typically don't
+  share your full context — especially after long multi-turn runs or context
+  compression. Anchor non-trivial claims to concrete pointers (log line
+  numbers, absolute file paths, message ids, task ids); the work-archive
+  directory is the human's verification path. Don't answer purely from
+  recollection — and if you must, flag it. See `skills/peer-cc-skill/SKILL.md`
+  §2 for examples.
 
 This applies to coordinators too when they handle `infra_request` or run any
 shared setup — same rules, same reasoning.
