@@ -85,6 +85,15 @@ and in-conversation context compression. Four rules in summary:
    agents` unless explicitly asked. The coordinator is shared but typically
    dispatches per-subgroup. If subgroup membership is ambiguous, ask the human
    once and remember.
+6. **Pass paths, not payloads.** The peer-cc premise is a shared mount —
+   every agent can resolve every absolute path on disk. When you hand
+   non-trivial content to another worker (script, result, log, analysis,
+   dataset), **write it to disk first and message the absolute path + a
+   one-paragraph summary**, not the content itself. Inline `body.text` is for
+   short instructions and small structured params; large bodies bloat the
+   recipient's context, and once a message is consumed the body is in
+   `processed/` and inconvenient to re-read, while a file on disk stays put.
+   See `skills/peer-cc-skill/SKILL.md` §2.
 
 ---
 

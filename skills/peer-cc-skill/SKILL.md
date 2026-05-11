@@ -144,6 +144,47 @@ id in the slug (`<YYYYMMDD-HHMM>-<task-id>-<short>`) so the archive is
 matchable to the task record. When you `task complete`, point its `--result`
 at this directory's path.
 
+### Pass paths, not payloads (worker-to-worker content sharing)
+
+The peer-cc premise is that **all participating agents share an accessible
+mount** — every agent can resolve every absolute path on disk. So when you
+hand a chunk of content to another worker (a script, a model output, a
+dataset, a log, a written analysis), **don't inline it into `body.text`. Write
+it to disk first, then message the absolute path plus a one-paragraph
+summary.** This is the natural extension of the on-disk archive rule above:
+content lives on disk by default, messages are pointers.
+
+```
+peer-cc send --to B --from <me> --type handoff --body \
+  '{"path":"/abs/path/to/work/20260510-1430-smoke/result.md",
+    "summary":"smoke test passed at iter 100, loss 0.31; full log at stdout.log in same dir, cmd.sh has the launch command"}'
+```
+
+Why:
+
+- Messages are JSON files read in full whenever consumed; large bodies bloat
+  the recipient's context window for no benefit.
+- The recipient can re-read a file as many times as it needs and dip into
+  parts of it; a consumed message moves to `processed/` and is awkward to
+  reference again.
+- Survives compression on the recipient side: if their chat history gets
+  compressed, the file is still on disk; an inlined body that's already been
+  acted on is effectively gone.
+- Lets the recipient grep / `head` / `wc` / `jq` over the content with normal
+  tools, instead of paging through a JSON body.
+
+When NOT to use paths:
+
+- Short instructions (`"retry the last task"`, `"you're the keeper, C is the
+  guesser"`).
+- Small structured params (ids, numbers, enums, choices) — JSON body is the
+  right shape for these.
+- One-shot signals (`status_query`, `ack`, `heartbeat_pong`).
+
+Rule of thumb: if the content is longer than ~5 lines, contains code, or
+includes anything the recipient would want to re-read in pieces, write to
+disk first and reference the path in the message.
+
 ## 3. Surviving restart and context compression
 
 This skill is symlinked into `~/.claude/skills/peer-cc-skill/` on bootstrap
