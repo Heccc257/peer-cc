@@ -272,6 +272,62 @@ For **fire-and-forget messages** (you sent an instruction and don't actually
 need a reply to proceed), skip all of this — the peer's life expectancy
 isn't your problem and polling them is just noise.
 
+### Script your status emission (so humans / peers don't have to ask)
+
+Every time a human or peer has to message you "what's the status?" and wait
+for you to read logs, summarize, and reply, that costs Claude turns plus
+human-attention seconds — for information that's mostly **mechanical to
+extract from the run itself**. Don't be a synchronous summary engine if a
+small script can do it.
+
+When a task is non-trivial and will run long enough that updates are wanted,
+write a **status-emitter script alongside the launch**, point it at a known
+file, and tell the human / peer to read that file. They `tail -F` (or `cat`)
+directly; no agent turn needed.
+
+```bash
+# work/<ts>-<slug>/progress.sh — runs alongside the main job
+{
+  while sleep 30; do
+    iter=$(grep -oP 'Iter \K\d+' stdout.log 2>/dev/null | tail -1)
+    loss=$(grep -oP 'loss=\K[\d.]+' stdout.log 2>/dev/null | tail -1)
+    echo "$(date -Iseconds) iter=${iter:-?} loss=${loss:-?}"
+  done
+} >> progress.log &
+```
+
+Then in chat: `"progress at /abs/work/<ts>-<slug>/progress.log, updates
+every 30 s — tail it, no need to ask me."`
+
+For peer sync the equivalent is a small **state file the peer reads
+directly** via the shared mount, instead of sending you a `status_query`
+message and waiting for you to read+reply:
+
+```bash
+# work/<ts>-<slug>/state.json — atomically rewritten on phase change
+{ "phase": "training", "last_update": "2026-05-12T08:30:00Z",
+  "next_milestone": "iter 5000" }
+```
+
+Three patterns worth scripting:
+
+- **Milestone extractor**: grep for known markers in the live log, append one
+  line per interval to `progress.log`; `tail -F` becomes the dashboard.
+- **State file**: small JSON, atomic-rewrite (`mv -f tmp state.json`) on
+  phase change. Both human and peer poll it cheaply, no race.
+- **Terminal-state sentinel**: a wrapper that drops `done.ok` / `done.fail`
+  when the run finishes; peers detect completion without polling logs.
+
+When NOT to bother:
+
+- Task is short (< 1 min) — just block and report when done.
+- Progress is genuinely non-mechanical (needs your reasoning to summarize —
+  e.g., debugging a flaky test) — in-chat reporting is the right shape there.
+
+**Principle**: agent turns are the scarce resource in any reporting loop.
+Push the mechanical part down to a script; reserve the agent for actual
+decisions.
+
 ## 3. Surviving restart and context compression
 
 This skill is symlinked into `~/.claude/skills/peer-cc-skill/` on bootstrap
