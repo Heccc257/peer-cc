@@ -226,6 +226,52 @@ Rule of thumb: if the content is longer than ~5 lines, contains code, or
 includes anything the recipient would want to re-read in pieces, write to
 disk first and reference the path in the message.
 
+### Liveness checks for co-work (peers can die silently)
+
+A CC session can interrupt at any moment — API errors, OOM, network blips,
+terminal killed, context window exhausted. If your work **depends on a peer's
+reply** (you're blocking on `B`'s `task_result`, `infra_ready`, or your
+custom response type), the inbox message you wrote may sit there forever and
+you may never know. Don't trust silence as progress.
+
+Before you kick off co-work, set up liveness checks:
+
+1. **Agree on a heartbeat cadence with the peer in the kickoff message.**
+   Scale it with the task's complexity, not a fixed number:
+   - Quick exchange (seconds): no polling, just trust the inbox.
+   - Medium task (minutes): peer heartbeats every ~60 s, you check every ~2 min.
+   - Long task (hours): peer heartbeats every ~5 min, you check every ~15 min.
+   - Multi-day or human-in-the-loop: heartbeat cadence becomes pro forma; you
+     mostly rely on the human noticing.
+
+   Bake the cadence into the kickoff body — `"send a peer-cc heartbeat every
+   60s while running this"` — so the peer doesn't forget. PROTOCOL.md §7
+   covers the heartbeat mechanism itself.
+2. **Run a periodic liveness check on your side.** A simple Monitor:
+
+   ```bash
+   while true; do
+     uv run peer-cc info --id B --json \
+       | jq -r '"B last_seen=\(.last_seen) tokens=\(.input_tokens // "?")"'
+     sleep 120
+   done
+   ```
+
+   Filter to emit only when `last_seen` goes stale (older than ~3× the agreed
+   cadence) so you don't drown in noise. PROTOCOL.md §11 buffering rules apply
+   — wrap with `stdbuf -oL` if needed.
+3. **Define "stale" up front.** Generally `~3× agreed cadence` is the right
+   threshold — covers a normal slow turn but flags a real death.
+4. **When a peer goes stale, escalate, don't hang.** Tell the human in one
+   line: `"B last seen 12 min ago, no reply on the crawl task — reroute,
+   retry, or wait?"`. If the peer was holding a queued task, ask the
+   coordinator to `peer-cc remove --id <peer>` — that returns the task to
+   `pending/` so another worker can claim it.
+
+For **fire-and-forget messages** (you sent an instruction and don't actually
+need a reply to proceed), skip all of this — the peer's life expectancy
+isn't your problem and polling them is just noise.
+
 ## 3. Surviving restart and context compression
 
 This skill is symlinked into `~/.claude/skills/peer-cc-skill/` on bootstrap

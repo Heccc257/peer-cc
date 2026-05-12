@@ -102,6 +102,17 @@ and in-conversation context compression. Four rules in summary:
    the end that "N messages queued from B/C" and let the human decide whether
    to address them now or keep going. Peer notifications never preempt
    human-facing work.
+8. **Peers can die silently — set up liveness before co-work.** A CC session
+   can interrupt at any moment (API errors, OOM, network, terminal killed,
+   context window exhausted). If your work depends on a peer's reply, don't
+   block on it indefinitely. Before kicking off, agree on a heartbeat cadence
+   with the peer (scaled to task complexity — ~60 s for minute-long tasks,
+   ~5 min for hour-long tasks), and run a periodic check on
+   `peer-cc info --id <peer>` for `last_seen`. If the peer goes stale beyond
+   ~3× the cadence, surface it to the human and consider asking the
+   coordinator to `peer-cc remove --id <peer>` so any held task returns to
+   `pending/`. PROTOCOL §7 covers the heartbeat mechanism;
+   `skills/peer-cc-skill/SKILL.md` §2 has the recipe.
 
 ---
 
