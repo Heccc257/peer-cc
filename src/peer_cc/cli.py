@@ -140,10 +140,26 @@ def deregister(
 
 
 @app.command()
-def agents(coop: str = typer.Option(None, "--coop", "-c")):
-    """List all registered agents (one JSON per line)."""
+def agents(
+    alive: bool = typer.Option(
+        False,
+        "--alive",
+        help="only show agents whose last_seen is fresh (within --alive-window seconds)",
+    ),
+    alive_window: int = typer.Option(
+        60,
+        "--alive-window",
+        help="seconds threshold for --alive; matches register's collision window by default",
+    ),
+    coop: str = typer.Option(None, "--coop", "-c"),
+):
+    """List registered agents (one JSON per line). Pass --alive to filter
+    out zombies whose watcher has been gone for more than --alive-window
+    seconds (default 60s = ~4× watcher heartbeat interval)."""
     root = coop_root(coop)
     for a in _agents.list_agents(root):
+        if alive and not _agents.is_alive(a, fresh_window_sec=alive_window):
+            continue
         typer.echo(json.dumps(a, ensure_ascii=False))
 
 
@@ -206,44 +222,51 @@ def remove(
     """Evict an agent: delete agents/<id>.json, return claimed tasks to pending,
     wipe inbox/<id>/. Does NOT kill the agent's CC process — close the terminal
     or Ctrl+C the inbox watcher yourself if you want it fully gone."""
-    import shutil
-
     root = coop_root(coop)
-    fp = agents_dir(root) / f"{agent}.json"
-    if not fp.exists():
+    summary = _agents.evict(root, agent, return_claimed=return_claimed)
+    if not summary["existed"]:
         typer.echo(f"no such agent: {agent}", err=True)
         raise typer.Exit(code=2)
-
-    returned = 0
-    if return_claimed:
-        cdir = tasks_claimed(root, agent)
-        if cdir.exists():
-            for tf in list(cdir.glob("*.json")):
-                data = json.loads(tf.read_text(encoding="utf-8"))
-                data.pop("claimed_by", None)
-                data.pop("claimed_at", None)
-                data["status"] = "pending"
-                target = tasks_pending(root) / tf.name
-                tmp = target.with_name(f".{target.name}.tmp.{os.getpid()}")
-                tmp.write_text(
-                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                os.replace(tmp, target)
-                tf.unlink()
-                returned += 1
-            try:
-                cdir.rmdir()
-            except OSError:
-                pass
-
-    ibx = inbox_dir(root, agent)
-    if ibx.exists():
-        shutil.rmtree(ibx)
-
-    fp.unlink()
-    _log.append_event(root, agent, "remove", tasks_returned=returned)
+    _log.append_event(root, agent, "remove", tasks_returned=summary["tasks_returned"])
     typer.echo(
-        f"removed agent {agent} (returned {returned} claimed task(s) to pending)"
+        f"removed agent {agent} (returned {summary['tasks_returned']} claimed task(s) to pending)"
+    )
+
+
+@app.command()
+def sweep(
+    threshold_sec: int = typer.Option(
+        86400,
+        "--threshold-sec",
+        help="evict agents whose last_seen is older than this (default 24h)",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="report what would be evicted without doing it"
+    ),
+    coop: str = typer.Option(None, "--coop", "-c"),
+):
+    """Evict every agent whose last_seen is older than --threshold-sec.
+
+    Useful at coordinator startup to drop zombies from past sessions whose
+    terminals were closed without `peer-cc deregister`. The default 24h
+    threshold is far longer than the watcher's 15s heartbeat interval, so any
+    agent with a live watcher is safe.
+    """
+    root = coop_root(coop)
+    swept = _agents.sweep_stale(root, threshold_sec=threshold_sec, dry_run=dry_run)
+    if not dry_run:
+        for s in swept:
+            _log.append_event(
+                root,
+                s.get("agent", "?"),
+                "sweep_evict",
+                tasks_returned=s.get("tasks_returned", 0),
+            )
+    typer.echo(
+        json.dumps(
+            {"swept": [s.get("agent") for s in swept], "dry_run": dry_run, "threshold_sec": threshold_sec},
+            ensure_ascii=False,
+        )
     )
 
 
@@ -366,24 +389,85 @@ def watch_cmd(
     kind: str = typer.Argument(..., help="inbox|tasks"),
     agent: str = typer.Option(None, "--id", help="required for kind=inbox; for tasks, used to heartbeat"),
     interval: float = typer.Option(1.0, "--interval", help="poll interval seconds"),
+    daemon: bool = typer.Option(
+        False,
+        "--daemon",
+        help="spawn detached, append output to comm/.../<watch>.log; idempotent — does nothing if already running",
+    ),
+    stop: bool = typer.Option(
+        False, "--stop", help="kill the daemon for this kind+agent (no foreground watch)"
+    ),
     coop: str = typer.Option(None, "--coop", "-c"),
 ):
     """Poll-watch a dir; print new file paths to stdout. NFS-safe.
 
-    Designed to be invoked from Claude Code's Monitor tool — every line of stdout
-    is one wakeup event for the agent's CC session. While running, this watcher
-    also heartbeats the agent's last_seen every 15s so collision detection
-    knows the agent is alive."""
+    Foreground (default): prints to stdout, dies with parent — designed for CC's
+    Monitor tool. Heartbeats the agent's last_seen every 15s while running.
+
+    --daemon: forks a fully-detached process whose lifetime is independent of
+    the parent shell or CC session. Output goes to comm/.../<watch>.log
+    (appended). Use `tail -F` (or CC's Monitor on the log file) to consume
+    events. Survives terminal close and CC harness restart, so messages that
+    arrive while no CC is open are still recorded.
+
+    --stop: kills any daemon previously started with --daemon for the same
+    kind+agent.
+    """
     root = coop_root(coop)
+    if stop and daemon:
+        raise typer.BadParameter("--stop and --daemon are mutually exclusive")
+
     if kind == "inbox":
         if not agent:
             raise typer.BadParameter("inbox watch requires --id")
         d = inbox_dir(root, agent)
+        d.mkdir(parents=True, exist_ok=True)
+        pidfile = d / ".watch.pid"
+        logfile = d / ".watch.log"
     elif kind == "tasks":
         d = tasks_pending(root)
+        d.mkdir(parents=True, exist_ok=True)
+        if not agent:
+            raise typer.BadParameter("--id required for tasks watch (used for heartbeat + pidfile)")
+        pidfile = d.parent / f".tasks-watch-{agent}.pid"
+        logfile = d.parent / f".tasks-watch-{agent}.log"
     else:
         raise typer.BadParameter(f"unknown kind: {kind!r} (expected inbox|tasks)")
+
+    if stop:
+        ok = _watch.daemon_stop(pidfile)
+        typer.echo(json.dumps({"stopped": ok, "pidfile": str(pidfile)}, ensure_ascii=False))
+        return
+
     hb = (root, agent) if agent else None
+
+    if daemon:
+        # Daemon does NOT heartbeat — it's an "answering machine" that records
+        # message arrivals to the logfile while no CC is open. Liveness
+        # (agents/<id>.json last_seen) belongs to the foreground Monitor inside
+        # CC; if the daemon also heartbeated, A would still look "alive" after
+        # the user closes their terminal, and the next SessionStart's register
+        # call would falsely fail with AgentCollision.
+        pid, already = _watch.daemon_start_fork(
+            _watch.watch_dir,
+            args=(d,),
+            kwargs={"interval": interval, "heartbeat": None},
+            pidfile=pidfile,
+            logfile=logfile,
+        )
+        typer.echo(
+            json.dumps(
+                {
+                    "pid": pid,
+                    "already_running": already,
+                    "logfile": str(logfile),
+                    "pidfile": str(pidfile),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+
     _watch.watch_dir(d, interval=interval, heartbeat=hb)
 
 

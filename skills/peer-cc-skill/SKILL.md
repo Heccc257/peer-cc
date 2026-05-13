@@ -59,6 +59,42 @@ want me to handle them now?") and let the human decide. Peer notifications
 **never** preempt human-facing work; that's how a single agent stays coherent
 to the person it's actually talking to.
 
+**Re-anchor on the world, not on memory.** When the user mentions a peer
+agent for the first time in a turn ("ask B...", "talk to C...", "have D
+run..."), or when you've just resumed from session restart / context
+compression, **don't trust your memory of the last state — re-verify in ONE
+batched check** before sending. The point is to know who's actually reachable
+without burning multiple round-trips ("is B alive?", "what about C?", "any
+new inbox?"). One bash gives you everything:
+
+```bash
+{
+  echo '== alive agents ==';        uv run peer-cc agents --alive
+  echo '== my pending inbox ==';    uv run peer-cc inbox --id <me> | wc -l
+  echo '== watcher daemon ==';      \
+    test -f comm/inbox/<me>/.watch.pid && \
+      kill -0 "$(cat comm/inbox/<me>/.watch.pid)" 2>/dev/null && \
+      echo daemon-alive || echo daemon-dead
+} 2>&1
+```
+
+If a peer is missing from `agents --alive` but the user assumed it was
+there, surface it once: `"B isn't alive — last seen <ts>; should I nudge or
+wait?"` — don't silently send into the void.
+
+Don't:
+
+- Re-verify on every turn. Only at boundaries (peer-mention, post-resume,
+  post-compression). On routine turns, trust the foreground watcher.
+- Ask the human "is B alive?" — they're asking you precisely because they
+  want you to figure it out.
+- Run 5 separate `peer-cc info --id X` calls — batch them. One round-trip,
+  one read of the result.
+
+This is the cite-evidence rule (§2 below) applied to peer state: the
+filesystem (`agents/`, `inbox/`, watcher pidfiles) is the source of truth;
+your memory of it is potentially stale.
+
 ## 2. Reporting discipline (workers, this is the big one)
 
 Workers often run **long, multi-step, partially-autonomous** workflows: launch

@@ -113,6 +113,13 @@ and in-conversation context compression. Four rules in summary:
    coordinator to `peer-cc remove --id <peer>` so any held task returns to
    `pending/`. PROTOCOL §7 covers the heartbeat mechanism;
    `skills/peer-cc-skill/SKILL.md` §2 has the recipe.
+9. **Re-anchor on the world, not memory.** When the user mentions a peer
+   agent for the first time in a turn, or you've just resumed from session
+   restart / context compression, run **one** batched check before acting —
+   `peer-cc agents --alive` plus `peer-cc inbox --id <you> | wc -l` plus a
+   pidfile check on your inbox watcher daemon. Don't trust memory of the
+   last state, but don't burn multiple round-trips asking individually
+   either. Surface gaps to the human once. SKILL.md §1 has the bash recipe.
 
 ---
 
@@ -403,10 +410,13 @@ All commands accept `--coop <path>` or read `PEER_CC_COOP` env.
 
 ```
 peer-cc init
-peer-cc register   --role {coordinator|worker} --id <id>
+peer-cc register   --role {coordinator|worker} --id <id> [--force]
 peer-cc heartbeat  --id <id> [--status <s>]
 peer-cc deregister --id <id>
-peer-cc agents
+peer-cc agents     [--alive] [--alive-window <sec>]
+peer-cc sweep      [--threshold-sec <sec>] [--dry-run]   # bulk-evict stale agents (no live watcher)
+peer-cc info       [--id <id>] [--json]                  # token usage + session details
+peer-cc remove     --id <id> [--keep-claimed]
 peer-cc send       --to <id> --from <id> --type <t> [--body '<json>'] [--reply-to <msg-id>]
 peer-cc inbox      --id <id>
 peer-cc consume    --id <id> --path <msg-path>
@@ -414,8 +424,8 @@ peer-cc task publish  --from <id> --title <s> [--body '<json>'] [--requires tag1
 peer-cc task list
 peer-cc task claim    --agent <id> [--id <task-id>]
 peer-cc task complete --agent <id> --id <task-id> [--result '<json>'] [--ok|--fail]
-peer-cc watch  inbox --id <id>     # for Monitor tool — prints new file paths
-peer-cc watch  tasks               # for workers polling tasks/pending/
+peer-cc watch  inbox --id <id> [--daemon|--stop]    # foreground: for Monitor tool. --daemon: detached, writes to comm/inbox/<id>/.watch.log so messages aren't lost while CC is closed
+peer-cc watch  tasks --id <id> [--daemon|--stop]
 peer-cc status
 peer-cc reset  --yes               # coordinator only
 ```

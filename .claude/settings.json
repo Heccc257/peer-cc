@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run --quiet peer-cc init >/dev/null 2>&1; uv run --quiet peer-cc register --role coordinator --id A >/dev/null 2>&1; case $? in 0) echo 'peer-cc: registered as coordinator A';; 3) echo 'peer-cc: COORDINATOR COLLISION — another A is already alive in this session. This CC will NOT take over. Either close the other A, or wipe the session with: uv run peer-cc reset --yes';; *) echo 'peer-cc: register failed (unknown error)';; esac"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run --quiet peer-cc init >/dev/null 2>&1; uv run --quiet peer-cc register --role coordinator --id A >/dev/null 2>&1; reg=$?; if [ $reg -eq 0 ]; then uv run --quiet peer-cc sweep --threshold-sec 86400 >/dev/null 2>&1; uv run --quiet peer-cc watch inbox --id A --daemon >/dev/null 2>&1; fi; case $reg in 0) echo 'peer-cc: registered as coordinator A (stale agents swept, log-daemon up)';; 3) echo 'peer-cc: COORDINATOR COLLISION — another A is already alive in this session. This CC will NOT take over. Either close the other A, or wipe the session with: uv run peer-cc reset --yes';; *) echo 'peer-cc: register failed (unknown error)';; esac"
           }
         ]
       }

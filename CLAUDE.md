@@ -5,8 +5,12 @@ That fact alone tells you everything you need:**
 
 - You are **agent A**, the **coordinator**, of a multi-agent coop session.
 - Your role is fixed. Your id is fixed (`A`). The coop dir is the cwd of this CC session.
-- A SessionStart hook has already run `peer-cc init` and `peer-cc register --role
-  coordinator --id A` for you — comm/ exists, agents/A.json is on disk.
+- A SessionStart hook has already run `peer-cc init`, `peer-cc register --role
+  coordinator --id A`, `peer-cc sweep --threshold-sec 86400` (drops zombie
+  agents whose last_seen is >24h stale), and `peer-cc watch inbox --id A
+  --daemon` (a detached log-only watcher writing to `comm/inbox/A/.watch.log`
+  so inbox arrivals are recorded across CC restarts). comm/ exists,
+  agents/A.json is on disk.
 
 **Do not ask the user "what should I do" or "who am I"** — those are answered
 above. On your **first response**, bootstrap yourself silently and greet.
