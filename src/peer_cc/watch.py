@@ -5,6 +5,14 @@ externally (or use the daemon helpers below for detached operation). Hidden
 files (starting with '.') and the 'processed' subdir are ignored, so atomic
 tmp files don't trigger spurious events.
 
+**Startup emits already-pending files.** On startup `seen` is empty, so the
+first poll treats every existing un-consumed file as new and emits it. This
+fixes the "watcher restart silently drops pending messages" bug: if the old
+watcher died with N un-consumed messages still in the inbox, the new watcher
+re-announces them. Trade-off: an unconsumed file is re-emitted on every new
+watcher process — so always `peer-cc consume` after handling, otherwise you
+get duplicate notifications next restart.
+
 When a (coop, agent_id) heartbeat target is provided, also bumps that agent's
 last_seen on a slow timer (default every 15s). This is what makes liveness
 detection work across processes — register's own pid dies seconds after it
@@ -48,11 +56,15 @@ def watch_dir(
     heartbeat: tuple[Path, str] | None = None,
     heartbeat_interval: float = 15.0,
 ) -> None:
-    """Poll d for new files; print new paths. Optionally heartbeat
-    (coop_root, agent_id) every heartbeat_interval seconds so the agent
-    stays counted as alive while this watcher is running."""
+    """Poll d for new files; print new paths. On startup, emits every existing
+    file too (`seen` starts empty), so a freshly-launched watcher re-announces
+    any pending un-consumed messages from a prior watcher's lifetime.
+    Optionally heartbeat (coop_root, agent_id) every heartbeat_interval seconds
+    so the agent stays counted as alive while this watcher is running."""
     d.mkdir(parents=True, exist_ok=True)
-    seen = _scan(d, suffix)
+    # Start with an empty `seen` so the first poll emits every already-pending
+    # file. This is the watcher-restart-doesn't-miss-messages fix.
+    seen: set[str] = set()
     last_hb = 0.0
     while True:
         now = _scan(d, suffix)

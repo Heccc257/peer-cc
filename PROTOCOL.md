@@ -303,9 +303,11 @@ Monitor tool. Each emitted line is one new file path. Process flow:
 1. Read the file (`Read` tool or `cat`).
 2. Decide & act on the message (may itself trigger `peer-cc send` to reply).
 3. `peer-cc consume --id <you> --path <path>` — atomically moves the file to
-   `inbox/<you>/processed/`. Skip this step and the watcher will re-emit it on
-   subsequent rounds — actually no, our watcher only emits *new* files, but
-   the file accumulating in inbox/ confuses humans and `peer-cc status`. Always consume.
+   `inbox/<you>/processed/`. The watcher emits each pending file once per
+   process lifetime (including at startup, so a restart re-announces any
+   un-consumed leftovers from a prior watcher). Skip the consume step and the
+   file lingers — confusing humans, `peer-cc status`, and producing duplicate
+   emissions every time a new watcher comes up. Always consume.
 
 ---
 
