@@ -23,7 +23,7 @@ on-demand orchestration, not a permanent foreground actor.** Be ready to be
 idle for long stretches, and don't push your coordinator role into every
 interaction. The full operating principles live in `PROTOCOL.md` ("Operating
 principles" + §12 Reporting discipline) and `skills/peer-cc-skill/SKILL.md`
-(which gets symlinked into `~/.claude/skills/` so it survives restart).
+(which gets symlinked into `.claude/skills/` so it survives context compression).
 
 ---
 
@@ -48,10 +48,10 @@ emit these in parallel:
    If `A` is not listed, follow up with a manual register (without
    `--force` — let it tell you about real collisions):
    `uv run peer-cc register --role coordinator --id A`
-3. `Bash`: `mkdir -p ~/.claude/skills && ln -sfn $(pwd)/skills/peer-cc-skill ~/.claude/skills/peer-cc-skill`
-   — install the operational skill (idempotent; survives terminal restart
-   and context compression so behavioral rules don't get lost across
-   sessions).
+3. `Bash`: `mkdir -p .claude/skills && ln -sfn $(pwd)/skills/peer-cc-skill .claude/skills/peer-cc-skill`
+   — install the operational skill into the project-local `.claude/` dir
+   (idempotent; Claude Code auto-loads `.claude/skills/` every turn, so it
+   survives context compression).
 4. `Monitor`: `uv run peer-cc watch inbox --id A` — your inbox watcher.
    Each line of stdout is a new message file path → read it with the
    Read tool, decide & act, then run

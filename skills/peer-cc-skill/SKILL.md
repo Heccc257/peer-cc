@@ -13,6 +13,129 @@ layout, CLI. **This skill carries the behavioral rules** that the spec doesn't
 legislate: how the human actually routes intent, when to report, how to
 re-orient after a restart. Read both.
 
+---
+
+## 0. Execution state vs Delivery state
+
+Every peer operates in one of two modes at any given time. Recognizing which
+mode you're in determines your behavior, verbosity, and relationship to the
+human.
+
+### Execution state (执行)
+
+You enter execution state when:
+- You receive a task instruction (from human or lead peer) and begin autonomous work
+- You are leading other peers in a multi-step collaborative task
+- You are waiting on peer replies as part of a delegated workflow
+
+Behavior in execution state:
+- **Minimize human-facing chat output.** Don't narrate every step in the
+  conversation — write progress to your **execution log** instead.
+- **Write to `.claude/peer-cc/exec.log`** (in your cwd) — this is your primary output
+  channel during execution. The human monitors via `tail -F`.
+- **Peer communication flows freely** — send instructions, delegate, collect
+  results, all without surfacing each step to the human.
+- **Only break into chat for**: blockers that need human decision, critical
+  failures, and the final delivery announcement.
+- **Heartbeat normally** — keep your agent record fresh so the human sees
+  you're alive even when chat is quiet.
+
+### Delivery state (交付)
+
+You enter delivery state when:
+- Execution completes and results are ready for human review
+- The human directly addresses you (asks a question, gives feedback)
+- Another peer asks you to present/explain results to the human
+
+Behavior in delivery state:
+- **Be conversational and responsive.** Answer questions, cite evidence,
+  present results clearly.
+- **Reference your execution log** for evidence — point the human at specific
+  lines/sections rather than reciting from memory.
+- **Stay in delivery until the human moves on** — they may ask follow-ups,
+  request changes, or redirect. Don't auto-transition back to execution
+  unless given new work.
+
+### Transition announcements
+
+When transitioning between states, make it explicit:
+
+- **→ Execution**: one line in chat: `entering execution — task: <summary>, log: <abs-path>/.claude/peer-cc/exec.log`
+- **→ Delivery**: one line in chat: `execution complete — <one-line result summary>`, then present results
+
+### The execution log (`.claude/peer-cc/exec.log`)
+
+Every peer maintains this file in its cwd at the fixed path `.claude/peer-cc/exec.log`.
+Format: one timestamped line per event, structured for grep/tail.
+
+```
+[2026-06-18T14:30:00Z] EXEC_START task="implement auth module" lead=B peers=[C,D]
+[2026-06-18T14:30:05Z] STEP 1/4 reading existing auth code
+[2026-06-18T14:30:30Z] STEP 1/4 done — found 3 files to modify
+[2026-06-18T14:30:31Z] STEP 2/4 implementing JWT middleware
+[2026-06-18T14:30:45Z] SENT C instruction: write unit tests for jwt.ts
+[2026-06-18T14:30:46Z] SENT D instruction: update API docs
+[2026-06-18T14:32:00Z] RECV C task_result: 5 tests pass
+[2026-06-18T14:33:00Z] RECV D task_result: docs updated
+[2026-06-18T14:33:01Z] STEP 3/4 integration testing
+[2026-06-18T14:34:00Z] STEP 3/4 done — all green
+[2026-06-18T14:34:01Z] STEP 4/4 cleanup and final check
+[2026-06-18T14:34:30Z] EXEC_DONE ok — auth module complete, 3 files modified
+```
+
+Hard rules for the log:
+- **Self-manage log length.** The log is a monitoring window, not an archive.
+  When a previous execution run is complete and a new one starts, **delete the
+  old content** (truncate the file or overwrite with the new `EXEC_START`).
+  Within a single run, prune finished steps that are no longer useful — e.g.
+  once step 3 is done and step 4 has started, the detailed sub-lines of steps
+  1–2 can be replaced with a single summary line. Keep the log under ~50 lines
+  at any time. The human wants a live dashboard, not a scroll-back novel.
+- **Timestamps are mandatory** — ISO 8601, bracket-wrapped.
+- **Use STEP N/M** for trackable progress — the human can grep `STEP` to
+  see how far along you are.
+- **Log peer interactions** — `SENT <peer> <type>: <summary>` and
+  `RECV <peer> <type>: <summary>` so the human sees the collaboration flow.
+- **Log decisions briefly** — `DECISION: using approach X because Y` for
+  non-obvious choices the human might question later.
+- **End with EXEC_DONE or EXEC_FAIL** — clear terminal state.
+
+The human's monitoring workflow:
+```bash
+# Watch one peer
+tail -F <worker-cwd>/.claude/peer-cc/exec.log
+
+# Watch all peers (if cwds are known)
+tail -F /path/to/B/.claude/peer-cc/exec.log /path/to/C/.claude/peer-cc/exec.log
+```
+
+### Writing the log in practice
+
+Use the Bash tool to append lines:
+```bash
+mkdir -p .claude/peer-cc
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] STEP 2/4 implementing JWT middleware" >> .claude/peer-cc/exec.log
+```
+
+To start a new execution (truncates previous run):
+```bash
+mkdir -p .claude/peer-cc
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] EXEC_START task=\"...\" lead=X peers=[Y,Z]" > .claude/peer-cc/exec.log
+```
+
+Or write a small helper at the start of execution:
+```bash
+mkdir -p .claude/peer-cc
+cat > .claude/peer-cc/exec-log.sh << 'EOF'
+#!/bin/bash
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> .claude/peer-cc/exec.log
+EOF
+chmod +x .claude/peer-cc/exec-log.sh
+```
+Then: `.claude/peer-cc/exec-log.sh "STEP 2/4 implementing JWT middleware"`
+
+---
+
 ## 1. The human is not always with the coordinator
 
 The "coordinator orchestrates everything" framing is a starting position, not
@@ -366,10 +489,10 @@ decisions.
 
 ## 3. Surviving restart and context compression
 
-This skill is symlinked into `~/.claude/skills/peer-cc-skill/` on bootstrap
-(see PROTOCOL.md §STOP step 3 / §4 step 3). It survives terminal restarts and
-in-conversation context compression, so even if the conversation history is
-gone you can re-orient from this file alone.
+This skill is symlinked into `.claude/skills/peer-cc-skill/` on bootstrap
+(see PROTOCOL.md §STOP step 3 / §4 step 3). Claude Code auto-loads
+`.claude/skills/` every turn, so it survives context compression — even if
+the conversation history is gone you can re-orient from this file alone.
 
 If you're activating this skill and don't remember being a worker:
 

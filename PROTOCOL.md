@@ -29,12 +29,36 @@ that same turn. Total: one round-trip, not four.
 2. Pick an **agent id**. Honor whatever the user said in the prompt
    (e.g. "我是 worker B" → id=B). If they didn't specify, default to
    `<hostname>-<cwd_basename>`.
-3. **In ONE response, fire all four of these in parallel** (and put the
+3. **In ONE response, fire all five of these in parallel** (and put the
    step-5 greet as the text body of the same response):
    - `Bash`: `uv run --directory <coop> peer-cc register --role worker --id <id>`
-   - `Bash`: `mkdir -p ~/.claude/skills && ln -sfn <coop>/skills/peer-cc-skill ~/.claude/skills/peer-cc-skill`
-     — installs the operational skill (idempotent; survives terminal restart
-     and context compression so behavioral rules don't get lost).
+   - `Bash`: `mkdir -p .claude/skills && ln -sfn <coop>/skills/peer-cc-skill .claude/skills/peer-cc-skill`
+     — installs the operational skill into project-local `.claude/` dir
+     (idempotent; Claude Code auto-loads `.claude/skills/` every turn, so it
+     survives context compression).
+   - `Bash`: append a recovery anchor to your own project's `.claude/CLAUDE.md`
+     so the coop context survives context compression (Claude Code auto-loads
+     `.claude/CLAUDE.md` every turn). Idempotent — skip if the anchor block
+     already exists:
+     ```bash
+     mkdir -p .claude
+     if ! grep -q "peer-cc coop member" .claude/CLAUDE.md 2>/dev/null; then
+       cat >> .claude/CLAUDE.md << 'ANCHOR'
+
+# peer-cc coop member
+
+You are a registered worker in a peer-cc coop.
+- Coop dir: <coop>
+- Your id: <id>
+- Protocol: `<coop>/PROTOCOL.md` — re-read on context compression or restart
+- Skill (auto-loaded): `.claude/skills/peer-cc-skill/SKILL.md`
+- Execution log: `.claude/peer-cc/exec.log` — append progress here during execution state
+- Check inbox: `uv run --directory <coop> peer-cc inbox --id <id>`
+- Heartbeat: `uv run --directory <coop> peer-cc heartbeat --id <id>`
+ANCHOR
+     fi
+     ```
+     Replace `<coop>` and `<id>` with actual values (not literals).
    - `Monitor` (inbox): `uv run --directory <coop> peer-cc watch inbox --id <id>`
    - `Monitor` (tasks): `uv run --directory <coop> peer-cc watch tasks --id <id>`
 
@@ -42,7 +66,7 @@ that same turn. Total: one round-trip, not four.
    losing the race (`exit 2`) is normal — go back to idle.
 4. (subsumed into step 3 above — kept here only so §4 numbering doesn't drift)
 5. Greet the user on a **single line**, in the same response that fired the
-   three tool calls:
+   five tool calls:
    `worker <id> joined coop at <coop>, idle. Watching inbox + task queue.`
 
 Why parallel is safe: the watchers create their dirs lazily (mkdir on first
@@ -58,9 +82,14 @@ on first read, but do **not** re-execute the bootstrap.
 ## Operating principles (apply throughout your time in this coop)
 
 The full discussion lives in `skills/peer-cc-skill/SKILL.md`, symlinked into
-`~/.claude/skills/peer-cc-skill/` on bootstrap so it survives terminal restart
-and in-conversation context compression. Four rules in summary:
+`.claude/skills/peer-cc-skill/` on bootstrap so it survives context
+compression. Key rules in summary:
 
+0. **Execution state vs Delivery state.** In execution state (autonomous work),
+   minimize chat — write progress to `.claude/peer-cc/exec.log` and only break into
+   chat for blockers or the final delivery. In delivery state (human review),
+   be conversational and cite evidence from your log. Announce transitions
+   explicitly. Full spec in SKILL.md §0.
 1. **The human is not always with the coordinator.** Initial spin-up goes
    through coordinator A; afterwards the human usually sits at one specific
    worker's terminal and talks to that worker directly. Workers act on direct
@@ -75,7 +104,7 @@ and in-conversation context compression. Four rules in summary:
    acting on a message — else it lingers and confuses humans and `peer-cc
    status`.
 4. **Skill-first re-orientation after restart.** If your terminal or context
-   was reset, the peer-cc-skill auto-loads from `~/.claude/skills/`. Re-read
+   was reset, the peer-cc-skill auto-loads from `.claude/skills/`. Re-read
    `<coop>/PROTOCOL.md` cold and check `comm/inbox/<you>/` for missed messages
    before you act on whatever the human just said.
 5. **One coop ≠ one team.** Multiple subgroups commonly share a coop for
@@ -215,15 +244,36 @@ read this spec and follow it):
 1. Read `<coop-path>/PROTOCOL.md` (this file).
 2. Pick an agent id — default `<hostname>-<cwd_basename>` if the user didn't
    name one in the prompt; otherwise honor what they said (e.g. "我是 worker B" → id=B).
-3. Register yourself **and install the operational skill** (idempotent — safe
-   to re-run on every bootstrap). **No `--coop` or env var needed** —
+3. Register yourself, install the operational skill, **and anchor the coop
+   into your local `.claude/CLAUDE.md`** (all idempotent — safe to re-run on
+   every bootstrap). **No `--coop` or env var needed** —
    `uv run --directory <coop>` chdir()s into the coop root, and peer-cc
    auto-detects coop from cwd:
    ```bash
    uv run --directory <coop-path> peer-cc register --role worker --id <id>
-   mkdir -p ~/.claude/skills && ln -sfn <coop-path>/skills/peer-cc-skill ~/.claude/skills/peer-cc-skill
+   mkdir -p .claude/skills && ln -sfn <coop-path>/skills/peer-cc-skill .claude/skills/peer-cc-skill
    ```
-   The skill at `~/.claude/skills/peer-cc-skill/` carries the behavioral rules
+   Then append a recovery anchor to your project's `.claude/CLAUDE.md` (Claude
+   Code auto-loads this file every turn, so it survives context compression):
+   ```bash
+   mkdir -p .claude
+   if ! grep -q "peer-cc coop member" .claude/CLAUDE.md 2>/dev/null; then
+     cat >> .claude/CLAUDE.md << 'ANCHOR'
+
+   # peer-cc coop member
+
+   You are a registered worker in a peer-cc coop.
+   - Coop dir: <coop-path>
+   - Your id: <id>
+   - Protocol: `<coop-path>/PROTOCOL.md` — re-read on context compression or restart
+   - Skill (auto-loaded): `.claude/skills/peer-cc-skill/SKILL.md`
+   - Execution log: `.claude/peer-cc/exec.log` — append progress here during execution state
+   - Check inbox: `uv run --directory <coop-path> peer-cc inbox --id <id>`
+   - Heartbeat: `uv run --directory <coop-path> peer-cc heartbeat --id <id>`
+   ANCHOR
+   fi
+   ```
+   The skill at `.claude/skills/peer-cc-skill/` carries the behavioral rules
    (reporting discipline, restart re-orientation, etc.) so they survive
    terminal restart and context compression on this machine. See
    `<coop>/skills/peer-cc-skill/SKILL.md` for the full text.
@@ -471,7 +521,14 @@ a background job, wait for it, hand off to another worker, come back. The
 human may be away for minutes or hours. Without proactive reporting, "thinking",
 "blocked on a peer", "running fine in the background", and "crashed silently
 8 minutes ago" all look identical from the outside. Treat reporting as a hard
-deliverable, not a courtesy. Full discussion + examples live in
+deliverable, not a courtesy.
+
+**Relationship to execution/delivery states (SKILL.md §0):** In execution
+state, your primary reporting channel is `.claude/peer-cc/exec.log` — the human
+`tail -F`s it for progress. Chat stays quiet unless blocked. When you
+transition to delivery, the rules below apply to what you surface in chat.
+
+Full discussion + examples live in
 `skills/peer-cc-skill/SKILL.md` §2; the must-do rules are below.
 
 - **When you launch background work**, in the same turn tell the human:
