@@ -44,12 +44,32 @@ def atomic_json(path: Path, value: dict) -> None:
 
 
 class Rpc:
-    """One initialized JSON-lines connection, with bounded synchronous requests."""
+    """Initialized JSON-RPC over stdio JSONL or WebSocket-over-Unix."""
 
-    def __init__(self, command: list[str], timeout: float = 15):
-        self.process = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1
-        )
+    def __init__(
+        self,
+        command: list[str] | None = None,
+        timeout: float = 15,
+        *,
+        socket_path: Path | None = None,
+    ):
+        self.process = self.connection = None
+        if socket_path is not None:
+            from websockets.sync.client import unix_connect
+
+            self.connection = unix_connect(
+                str(socket_path), open_timeout=timeout, close_timeout=2
+            )
+        else:
+            if not command:
+                raise ValueError("a socket path or stdio command is required")
+            self.process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
         self.responses: queue.Queue = queue.Queue()
         self.timeout, self.sequence = timeout, 0
         threading.Thread(target=self._read, daemon=True).start()
@@ -65,7 +85,9 @@ class Rpc:
 
     def _read(self):
         try:
-            for line in self.process.stdout:
+            for line in (
+                self.connection if self.connection is not None else self.process.stdout
+            ):
                 message = json.loads(line)
                 if "id" in message and "method" in message:
                     # Never accept approvals or tool/user-input requests automatically.
@@ -75,11 +97,14 @@ class Rpc:
         except Exception as error:
             self.responses.put(error)
         finally:
-            self.responses.put(EOFError("App Server proxy closed"))
+            self.responses.put(EOFError("App Server connection closed"))
 
     def send(self, message):
-        self.process.stdin.write(json.dumps(message) + "\n")
-        self.process.stdin.flush()
+        if self.connection is not None:
+            self.connection.send(json.dumps(message))
+        else:
+            self.process.stdin.write(json.dumps(message) + "\n")
+            self.process.stdin.flush()
 
     def request(self, method, params):
         self.sequence += 1
@@ -104,6 +129,9 @@ class Rpc:
             return response["result"]
 
     def close(self):
+        if self.connection is not None:
+            self.connection.close()
+            return
         if self.process.poll() is None:
             self.process.terminate()  # This proxy process only, never the owning server.
             try:
@@ -273,9 +301,7 @@ def main():
     state.parent.mkdir(parents=True, exist_ok=True)
     with state.with_suffix(".lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        rpc = Rpc(
-            ["codex", "app-server", "proxy", "--sock", str(args.socket.resolve())]
-        )
+        rpc = Rpc(socket_path=args.socket.resolve())
         try:
             bridge = Bridge(
                 rpc,

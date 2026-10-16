@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -137,6 +138,37 @@ for line in sys.stdin:
             )
         finally:
             rpc.close()
+
+    def test_unix_websocket_initialization_and_request(self):
+        from websockets.sync.server import unix_serve
+
+        def handler(connection):
+            initialized = False
+            for frame in connection:
+                message = json.loads(frame)
+                if message["method"] == "initialized":
+                    initialized = True
+                    continue
+                result = (
+                    {}
+                    if message["method"] == "initialize"
+                    else {"initialized": initialized}
+                )
+                connection.send(json.dumps({"id": message["id"], "result": result}))
+
+        socket_path = self.root / "test.sock"
+        with unix_serve(handler, str(socket_path)) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            rpc = bridge_module.Rpc(socket_path=socket_path, timeout=2)
+            try:
+                self.assertTrue(
+                    rpc.request("thread/read", {"threadId": "test"})["initialized"]
+                )
+            finally:
+                rpc.close()
+                server.shutdown()
+                thread.join(timeout=2)
 
 
 if __name__ == "__main__":

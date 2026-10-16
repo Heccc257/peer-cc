@@ -7,6 +7,9 @@ dependencies = [
     "typer>=0.12",
 ]
 
+[project.optional-dependencies]
+codex = ["websockets>=14,<17"]
+
 [project.scripts]
 peer-cc = "peer_cc.cli:app"
 

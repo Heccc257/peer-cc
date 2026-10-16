@@ -34,11 +34,14 @@ not imply a daemon can call it: obtain the supported client endpoint and auth
 from its operator. Do not inspect or print credential stores to guess access.
 
 The supplied [bridge template](../scripts/codex_bridge.py) targets a verified,
-already-running App Server control socket through `codex app-server proxy`.
-It is a client, not a server, and never auto-resumes unloaded threads. Example:
+already-running App Server control socket using WebSocket-over-Unix (the `codex`
+optional dependency). It is a client, not a server, and never auto-resumes unloaded
+threads. A Unix socket is **not** the stdio JSONL transport: `codex app-server
+proxy` relays raw bytes and does not convert JSON lines to WebSocket frames.
+Example:
 
 ```bash
-uv run --directory /mnt/shared/peer-cc python \
+uv run --directory /mnt/shared/peer-cc --extra codex python \
   /mnt/shared/peer-cc/skills/peer-cc-skill/scripts/codex_bridge.py \
   --coop /mnt/shared/peer-cc --id codex \
   --worker-cwd /path/to/project --thread-id YOUR_THREAD_ID \
