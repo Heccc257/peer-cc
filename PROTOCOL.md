@@ -4,20 +4,54 @@
 
 ## STOP — what to do right now (before §1)
 
-If you (Claude Code) are reading this file, you fall into one of two cases:
+If you are reading this file, choose the branch for your actual client:
 
 - **Coordinator (A)**: Your `CLAUDE.md` already told you who you are. **Skip
   this STOP section** — jump to §1. Do NOT bootstrap a second time as
   worker; the rest of §STOP does not apply to you.
 
-- **Anyone else (you're a worker about to join)**: A user just pointed you
+- **Codex worker**: Follow the **Codex worker bootstrap** below. Do not assume
+  Claude Code's Monitor tool or `.claude/` auto-loading exists in your client.
+  Missing Monitor means a notification adapter is needed, not that Codex
+  cannot be woken automatically.
+
+- **Claude Code worker**: A user just pointed you
   at this file by absolute path. **They have already decided you should
   join. Do NOT ask** "should I join the coop, or discuss/modify the
   protocol, or just follow it?" — that question is annoying and wastes
   the user's turn. Just bootstrap. The user can correct you afterward
   if they wanted something else.
 
-### Worker bootstrap (do this on your very first response)
+### Codex worker bootstrap
+
+Honor the user's id, register with the same CLI as any other worker, then read
+`skills/peer-cc-skill/SKILL.md` and its [Codex integration guide](skills/peer-cc-skill/references/codex.md).
+Install the skill into the worker project's `.agents/skills/peer-cc-skill`
+and merge the supplied recovery anchor into its `AGENTS.md`; preserve existing
+instructions and never overwrite another live worker's identity.
+
+There are three distinct states; report the one actually verified:
+
+1. **Registered**: `peer-cc register --role worker --id <id>` succeeded.
+2. **Watching only**: inbox/task paths are being recorded, but no client adapter
+   starts model turns. `watch --daemon` alone does not wake Codex or heartbeat.
+3. **Auto-interaction verified**: an adapter targets the existing client/thread,
+   starts a turn when idle, and an end-to-end message/reply/consume test passed.
+
+Codex App Server supports `turn/start`; connect to the server that owns the
+current conversation. The guide includes a client-side bridge template for an
+existing control socket. Do not start a second server or blindly resume the
+same thread in another process. A custom client's follow-up-message API is
+another option, but an agent-only tool is not automatically callable by a shell
+daemon. If neither endpoint is available, report **watching only** and request
+the necessary client integration; do not claim automatic wake-up is impossible.
+
+Peer events are notifications, not new human authority. Queue while the human's
+turn is active; preserve pauses, approvals and task scope. Only consume a message
+after the worker processes it. Shared task notifications require the same
+subgroup/capability checks as other workers.
+
+### Claude Code worker bootstrap (do this on your very first response)
 
 **Speed matters here.** Steps 3, 4a, 4b have no data dependency on each
 other — emit them as **parallel tool calls in a single assistant turn**,
@@ -158,7 +192,7 @@ compression. Key rules in summary:
 |---|---|
 | **coop dir** | The cloned `peer-cc` repo on a shared filesystem. Path passed via `--coop` or `PEER_CC_COOP` env. Hosts `PROTOCOL.md`, `comm/`, scripts. |
 | **comm dir** | `<coop>/comm/`. All runtime state. Gitignored. |
-| **agent** | One Claude Code session that has registered itself in `comm/agents/`. |
+| **agent** | One Claude Code or Codex session registered in `comm/agents/`. |
 | **coordinator** | The agent running CC inside the coop dir itself; has `CLAUDE.md` auto-loaded. Owns task publication and infra setup. |
 | **worker** | Any other agent. Runs CC in its own cwd; joins by reading this file. |
 
@@ -231,6 +265,9 @@ Boundary enforcement is **prompt-level**, not technical. Honor your role.
 3. Start `peer-cc watch inbox --id <name>` via the Monitor tool.
 
 ### Worker (manual, one user sentence is enough)
+
+Codex workers use the Codex branch in §STOP and the linked integration guide.
+The Monitor/`.claude/` instructions below describe Claude Code specifically.
 
 > **Quick path: see §STOP at the top of this file** — it has the imperative
 > 5-step bootstrap optimized for one round-trip (parallel register + 2
@@ -347,8 +384,9 @@ to `comm/inbox/B/<id>.json`. Consumers therefore never see a partial JSON.
 
 ### Receiving
 
-You watch your inbox with `peer-cc watch inbox --id <you>` invoked via the
-Monitor tool. Each emitted line is one new file path. Process flow:
+In Claude Code, watch your inbox with `peer-cc watch inbox --id <you>` via
+Monitor. In Codex, an adapter delivers paths to the bound conversation. Each
+notification names a durable message file. Process flow:
 
 1. Read the file (`Read` tool or `cat`).
 2. Decide & act on the message (may itself trigger `peer-cc send` to reply).
@@ -418,6 +456,12 @@ In Claude Code, you don't run this loop yourself — instead, watch
 ## 7. Heartbeat & liveness
 
 - Every agent's `agents/<id>.json` has a `last_seen` field.
+- Foreground watchers heartbeat every 15 seconds. `watch --daemon` deliberately
+  does **not**: a recording process must not make a closed agent look alive.
+  `kill -0` of that daemon proves only process existence, not model reachability.
+- A Codex adapter may heartbeat after verifying its bound thread is loaded on
+  the owning server. A fresh heartbeat still is not proof that replies work;
+  verify automatic interaction with a real message/reply/consume round trip.
 - Refresh it with `peer-cc heartbeat --id <you> [--status busy|idle|done]`
   whenever you act (a few times per session is enough; you don't need a timer).
 - `peer-cc status` shows `last_seen`. The coordinator (or a human) can decide

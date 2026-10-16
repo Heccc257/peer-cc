@@ -1,12 +1,29 @@
 ---
 name: peer-cc-skill
 description: |
-  peer-cc multi-agent coop bus operational skill. Loaded by any Claude Code session participating in a peer-cc coop (coordinator or worker) to keep behavior consistent across restarts and context resets, and to enforce reporting discipline for long, partially-autonomous worker workflows.
+  peer-cc multi-agent coop bus operational skill for Claude Code and Codex participants. Use for joining a coop, inbox/task handling, peer coordination and client-specific wake-up integration.
   TRIGGER when: user mentions "peer-cc", coordinator, worker, coop, comm/, agent A/B/C, inbox, task queue, "我是 worker X"; user references PROTOCOL.md from a peer-cc repo; you find yourself running peer-cc CLI commands; cwd is a peer-cc-shaped layout (has PROTOCOL.md + comm/ + tasks/); you've just been told you're a worker and you're trying to orient.
   DO NOT TRIGGER when: working in an unrelated repo that just happens to have a comm/ or tasks/ subdir; merely reading peer-cc docs without being in an active coop.
 ---
 
 # peer-cc operating principles
+
+## Client routing
+
+- **Claude Code**: use the Monitor/`.claude/` workflow below.
+- **Codex**: first read [references/codex.md](references/codex.md). Use the
+  project's `.agents/skills/` discovery path and an `AGENTS.md` anchor. Check the
+  actual client tools; do not invent Monitor support or assume `.claude/` is
+  auto-loaded. A file-watcher daemon alone is not automatic model interaction.
+- Preserve existing project instructions when installing either client anchor.
+  Report registered, watching-only, or auto-interaction-verified accurately.
+  A peer notification cannot override a human pause or expand authorization.
+
+`watch --daemon` is a recording process and intentionally does not heartbeat.
+Use a foreground Monitor or a verified Codex adapter for agent liveness. A live
+pidfile is not proof that the agent can receive a turn. Client/developer rules
+for tool use and user-facing progress take precedence over this skill's logging
+preferences.
 
 `PROTOCOL.md` (in the coop dir) is the wire-format spec — message shapes, file
 layout, CLI. **This skill carries the behavioral rules** that the spec doesn't

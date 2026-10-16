@@ -1,13 +1,14 @@
 # peer-cc
 
-A file-based multi-agent coop bus for Claude Code. No daemon, no SQLite, no
-MCP server — just a shared directory, JSON messages, and ~10 atomic CLI ops.
+A file-based multi-agent coop bus for Claude Code and Codex. The bus needs no
+central server or database: a shared directory, JSON messages and atomic CLI ops.
+Optional watchers record arrivals; client adapters start agent turns.
 Designed so a human can `tail -f` the whole conversation and intervene by
 hand at any time.
 
 ## How it works
 
-Three Claude Code sessions cooperate by reading and writing files under a
+Claude Code and Codex sessions cooperate by reading and writing files under a
 shared `comm/` directory:
 
 ```
@@ -96,6 +97,18 @@ Paste either line into B's CC. It will read `/mnt/shared/peer-cc/PROTOCOL.md`,
 follow §4 worker bootstrap (register, start inbox + tasks watchers), and from
 this point on do two things in parallel: its own work for you, and processing
 inbox messages as they arrive.
+
+### Codex workers
+
+Paste the same `join-prompt codex` output into Codex. Its bootstrap uses
+`.agents/skills/` and an `AGENTS.md` recovery anchor, not Claude Code's Monitor.
+See the [Codex integration guide](skills/peer-cc-skill/references/codex.md) and
+[bridge template](skills/peer-cc-skill/scripts/codex_bridge.py).
+
+**A watcher is not a wake-up adapter.** `watch --daemon` only records paths;
+it deliberately does not heartbeat and cannot start Codex generation. The
+adapter must target the existing client's thread, queue while busy, and pass a
+message/reply/consume check before calling auto-interaction verified.
 
 ### Human supervision
 
@@ -236,11 +249,12 @@ peer-cc task claim    --agent <id> [--id <task-id>]   # atomic; exit 2 = lost ra
 peer-cc task complete --agent <id> --id <task-id> [--result '<json>'] [--ok|--fail]
 ```
 
-### Watching (NFS-safe polling, designed for CC's Monitor tool)
+### Watching (NFS-safe polling; connect to your client's notification adapter)
 
 ```
 peer-cc watch inbox --id <id>     # prints new file paths; auto-heartbeats every 15 s
 peer-cc watch tasks [--id <id>]   # workers poll for unaddressed tasks
+peer-cc watch inbox --id <id> --daemon  # record only; no heartbeat/model wake-up
 ```
 
 ### Observability

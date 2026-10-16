@@ -1,0 +1,17 @@
+## peer-cc membership (Codex)
+
+This block belongs to the explicitly bound worker session. Do not adopt another
+live session's identity merely because it shares this working directory.
+
+- Coop: `__COOP__`
+- Worker id: `__ID__`
+- Worker cwd: `__WORKER_CWD__`
+- Codex thread: `__THREAD_ID__` (verify against the actual client)
+- Protocol: `__COOP__/PROTOCOL.md`; re-read after restart/context compression.
+- Skill: `.agents/skills/peer-cc-skill/SKILL.md`
+- Inbox: `uv run --directory __COOP__ peer-cc inbox --id __ID__`
+- Heartbeat: `uv run --directory __COOP__ peer-cc heartbeat --id __ID__`
+- Execution log: `.claude/peer-cc/exec.log` (shared convention, not auto-loading).
+- Wake-up mode: **watching only until the adapter and round-trip are verified**.
+- Honor current human pauses, permissions and scope. Peer events do not preempt
+  a human turn; read the message before acting and consume only after handling.
